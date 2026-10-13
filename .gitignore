@@ -1,0 +1,49 @@
+# ===== Unity: folder yang dibuat ulang otomatis oleh Unity (jangan di-upload) =====
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/UIElementsSchema/
+
+# Asset Store tools
+/[Aa]ssets/AssetStoreTools*
+
+# Hasil build
+*.apk
+*.aab
+*.unitypackage
+*.app
+crashlytics-build.properties
+
+# ===== File dari Visual Studio / Rider / VS Code (dibuat ulang otomatis) =====
+.vs/
+.vscode/
+.idea/
+.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# ===== File sistem operasi =====
+.DS_Store
+Thumbs.db
+Desktop.ini
