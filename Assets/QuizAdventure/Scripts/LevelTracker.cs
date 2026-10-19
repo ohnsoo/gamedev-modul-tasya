@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -92,6 +92,7 @@ public class LevelTracker : MonoBehaviour
                     }
                     SceneManager.SetActiveScene(SceneManager.GetSceneByName(baseLevelName));  //set the active scene back to the base scene
                 }
+                player.GetComponent<Renderer>().material.color = currentLevel.myPlayerColor;  //Challenge: change the player color to the one saved in the current sub-scene's Scriptable Object
             }
         }
     }

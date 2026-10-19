@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -17,4 +17,7 @@ public class LevelContainerScriptableObject : ScriptableObject
 
     [Tooltip("What is the diameter or width of your sub-scene?")]
     public float mySceneSize;
+
+    [Tooltip("Challenge: what color should the player be while inside this sub-scene?")]
+    public Color myPlayerColor = Color.white;
 }

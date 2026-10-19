@@ -15,6 +15,36 @@ EditorBuildSettings:
     path: Assets/QuizAdventure/Scenes/Level1Final.unity
     guid: b1cbb7cdbde8f0b4d9d51a27eb5bce2d
   - enabled: 1
-    path: Assets/GamingWorkshop/Scenes/Activity1Start.unity
+    path: Assets/Scenes/Activity1Start.unity
     guid: 686b94843ee403a43ada6ded6c158da2
+  - enabled: 1
+    path: Assets/Scenes/tasya modul 6.unity
+    guid: eaaa250e0b2a01f4ab2f83e30627a8f3
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel0_0.unity
+    guid: 9a08d3caa208eec4798eb40b392ae8e7
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel0_1.unity
+    guid: 66eaa8afe29b21243aab50062637f119
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel0_2.unity
+    guid: 34dbffa8eb96fd048af239e57c200409
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel1_0.unity
+    guid: d04881665be059c499e805acba89952a
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel1_1.unity
+    guid: 5d6fcf93f2cab654ab235daaefad6591
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel1_2.unity
+    guid: 2052af267913e8e41b6cc6f5506e2a10
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel2_0.unity
+    guid: 6a655a1267d35f646bc061de2797484d
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel2_1.unity
+    guid: cea392f02e4f1e444a1508cca6ab5cce
+  - enabled: 1
+    path: Assets/SubScenes/SubLevel2_2.unity
+    guid: f4ecb4abe88a3d04783209d939f12838
   m_configObjects: {}
