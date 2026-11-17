@@ -13861,6 +13861,7 @@ MonoBehaviour:
   sensitivitas: 0.22
   ikutBelakang: 1.8
   radiusTabrakan: 0.35
+  lawanBicara: {fileID: 0}
 --- !u!1 &589774635
 GameObject:
   m_ObjectHideFlags: 0
@@ -16243,7 +16244,7 @@ MonoBehaviour:
     warnaKemasan: {r: 0.9, g: 0.25, b: 0.2, a: 1}
     ongkir: 15000
   dodi: {fileID: 2001215824}
-  jarakAksi: 2.6
+  jarakAksi: 3.5
   dialogPembuka:
   - Aplikasi Antar Cepat|Selamat datang di hari pertamamu, Anas! Ada 3 pesanan makanan yang menunggu.
   - Aplikasi Antar Cepat|Ambil pesanan di toko, lalu antar ke rumah pelanggan. Ikuti penanda hijau!
@@ -25162,6 +25163,14 @@ PrefabInstance:
       propertyPath: m_ClearFlags
       value: 4
       objectReference: {fileID: 0}
+    - target: {fileID: 20207086596764672, guid: 2d83b6b7c4cfbe5458f43ec99d33c064, type: 3}
+      propertyPath: field of view
+      value: 55
+      objectReference: {fileID: 0}
+    - target: {fileID: 20207086596764672, guid: 2d83b6b7c4cfbe5458f43ec99d33c064, type: 3}
+      propertyPath: near clip plane
+      value: 0.1
+      objectReference: {fileID: 0}
     - target: {fileID: 20676759089255900, guid: 2d83b6b7c4cfbe5458f43ec99d33c064, type: 3}
       propertyPath: field of view
       value: 55
@@ -29964,7 +29973,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 100000, guid: 98c3c377b338ed24ab2d9ee1cb19b41a, type: 3}
       propertyPath: m_Name
-      value: Bu Rina
+      value: Pak Rino
       objectReference: {fileID: 0}
     - target: {fileID: 400000, guid: 98c3c377b338ed24ab2d9ee1cb19b41a, type: 3}
       propertyPath: m_LocalPosition.x
@@ -30065,12 +30074,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ee67faefa2f241544bfbd737b9d4c7e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AntarNpc
-  nama: Bu Rina
+  nama: Pak Rino
   perilaku: 1
   dialog:
-  - Bu Rina|Halo! Driver Antar Cepat, ya? Ini pesanan donat untuk Rumah Hijau.
-  - Bu Rina|Masih hangat, jangan sampai penyok ya!
-  - Anas|Siap, Bu! Langsung saya antar.
+  - Pak Rino|Halo! Driver Antar Cepat, ya? Ini pesanan donat untuk Rumah Hijau.
+  - Pak Rino|Masih hangat, jangan sampai penyok ya!
+  - Anas|Siap, Pak! Langsung saya antar.
   titikPatroli: []
   jedaDiTitik: 1.5
   jarakIkut: 2.2

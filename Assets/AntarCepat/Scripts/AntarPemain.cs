@@ -19,7 +19,8 @@ public class AntarPemain : MonoBehaviour
     [HideInInspector] public Vector2 masukanLuar;
     [HideInInspector] public Transform gripKiri, gripKanan;   // pegangan stang skuter
     Animator anim;
-    float bobotIK;   // masukan tambahan (mis. joystick layar / pengujian)
+    float bobotIK;
+    float yawSkuter, lajuSkuter;   // masukan tambahan (mis. joystick layar / pengujian)
 
     NavMeshAgent agent;
     Vector3 vel;
@@ -44,6 +45,10 @@ public class AntarPemain : MonoBehaviour
         Vector2 masuk = Vector2.zero;
         if (InputManager.bCanPlayerMove)
             masuk = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")) + masukanLuar;
+
+        if (naikSkuter) { UpdateSkuter(masuk, dt); return; }
+        yawSkuter = transform.eulerAngles.y;
+        lajuSkuter = 0f;
 
         Vector3 depan = kamera != null ? kamera.forward : Vector3.forward; depan.y = 0f; depan.Normalize();
         Vector3 kanan = new Vector3(depan.z, 0f, -depan.x);
@@ -92,6 +97,49 @@ public class AntarPemain : MonoBehaviour
         transform.rotation = Quaternion.Euler(0f, yawBaru, miring);
     }
 
+    /// <summary>
+    /// Setir skuter seperti kendaraan: W = gas, S = rem lalu mundur pelan, A/D = belok kiri/kanan.
+    /// </summary>
+    void UpdateSkuter(Vector2 masuk, float dt)
+    {
+        if (!InputManager.bCanPlayerMove)
+        {
+            // sedang naik/turun atau dialog: ikuti arah yang diatur skrip lain
+            yawSkuter = transform.eulerAngles.y;
+            lajuSkuter = 0f; vel = Vector3.zero;
+            return;
+        }
+        float gas = Mathf.Clamp(masuk.y, -1f, 1f);
+        float setir = Mathf.Clamp(masuk.x, -1f, 1f);
+
+        float target = 0f;
+        if (gas > 0.05f) target = gas * kecepatanSkuter;
+        else if (gas < -0.05f) target = lajuSkuter > 0.3f ? 0f : gas * kecepatanSkuter * 0.35f;   // rem dulu, baru mundur
+        float a;
+        if (gas < -0.05f && lajuSkuter > 0.3f) a = 14f;                          // rem
+        else if (Mathf.Abs(target) > Mathf.Abs(lajuSkuter)) a = 6f;              // gas
+        else a = 4f;                                                             // lepas gas: melambat pelan
+        lajuSkuter = Mathf.MoveTowards(lajuSkuter, target, a * dt);
+
+        // makin pelan, makin kecil beloknya (saat diam tetap bisa belok sedikit)
+        float faktor = Mathf.Lerp(0.45f, 1f, Mathf.Clamp01(Mathf.Abs(lajuSkuter) / 2.5f));
+        float arahMundur = lajuSkuter < -0.1f ? -1f : 1f;
+        yawSkuter += setir * 95f * faktor * arahMundur * dt;
+
+        vel = Quaternion.Euler(0f, yawSkuter, 0f) * Vector3.forward * lajuSkuter;
+        if (agent.enabled && agent.isOnNavMesh && Mathf.Abs(lajuSkuter) > 0.01f)
+        {
+            Vector3 sebelum = transform.position;
+            agent.Move(vel * dt);
+            Vector3 nyata = (transform.position - sebelum) / Mathf.Max(dt, 0.0001f); nyata.y = 0f;
+            if (nyata.magnitude < Mathf.Abs(lajuSkuter) * 0.3f) lajuSkuter *= 0.6f;   // menabrak tepi jalan / tembok
+        }
+
+        float targetMiring = -setir * 12f * Mathf.Clamp01(Mathf.Abs(lajuSkuter) / 4f);
+        miring = Mathf.Lerp(miring, targetMiring, 1f - Mathf.Exp(-6f * dt));
+        transform.rotation = Quaternion.Euler(0f, yawSkuter, miring);
+    }
+
     // tangan memegang stang saat naik skuter (butuh "IK Pass" aktif di layer Animator)
     void OnAnimatorIK(int layer)
     {
@@ -113,6 +161,7 @@ public class AntarPemain : MonoBehaviour
     public void Berhenti()
     {
         vel = Vector3.zero;
+        lajuSkuter = 0f;
         if (agent != null && agent.enabled && agent.isOnNavMesh) { agent.ResetPath(); agent.velocity = Vector3.zero; }
     }
 

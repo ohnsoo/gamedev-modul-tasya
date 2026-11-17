@@ -108,7 +108,7 @@ public class AntarGame : MonoBehaviour
 
     void Update()
     {
-        if (sibuk) { panelPrompt.SetActive(false); return; }
+        if (sibuk) { panelPrompt.SetActive(false); penanda.gameObject.SetActive(false); return; }
         bool tekanAksi = Input.GetKeyDown(KeyCode.E) || tombolAksi;
         tombolAksi = false;
         if (indeks >= pesanan.Count)
@@ -308,6 +308,7 @@ public class AntarGame : MonoBehaviour
         Hentikan();
         InputManager.bCanPlayerMove = false;
         if (npc != null) npc.sedangBicara = true;
+        if (npc != null && kameraTpp != null) kameraTpp.lawanBicara = npc.transform;
         panelDialog.SetActive(true);
         StartCoroutine(Pop(panelDialog.transform, 0.25f));
         if (tombolLompat) tombolLompat.SetActive(false);
@@ -343,6 +344,7 @@ public class AntarGame : MonoBehaviour
         panelDialog.SetActive(false);
         if (tombolLompat) tombolLompat.SetActive(true);
         if (npc != null) npc.sedangBicara = false;
+        if (kameraTpp != null) kameraTpp.lawanBicara = null;
         InputManager.bCanPlayerMove = true;
         yield return null;
     }
@@ -843,6 +845,7 @@ public class AntarGame : MonoBehaviour
         {
             var cv = w.GetComponentInChildren<Canvas>(true);
             if (cv == null) continue;
+            if (cv.GetComponent<AntarBalon>() == null) cv.gameObject.AddComponent<AntarBalon>().skalaDasar = cv.transform.localScale.x;
             foreach (var img in cv.GetComponentsInChildren<Image>(true))
             {
                 var r = img.rectTransform;
