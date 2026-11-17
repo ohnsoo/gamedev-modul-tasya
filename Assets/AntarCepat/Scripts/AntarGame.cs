@@ -69,7 +69,7 @@ public class AntarGame : MonoBehaviour
     GameObject panelDialog, panelPrompt, panelAkhir, tombolLompat;
     CanvasGroup grupNotif;
     RectTransform promptRt, panahLanjut, kartuAkhir, tombolAksiRt;
-    RectTransform[] bintang;
+    RectTransform[] bintang, tombolAkhir;
     Image isiPitaNama;
     bool lanjutDitekan;
 
@@ -272,6 +272,11 @@ public class AntarGame : MonoBehaviour
         }
         TulisAkhir(pendapatan);
         Main(suaraKoin);
+        foreach (var t in tombolAkhir)
+        {
+            StartCoroutine(Pop(t, 0.3f));
+            yield return new WaitForSeconds(0.12f);
+        }
         InputManager.bCanPlayerMove = true;
     }
 
@@ -800,7 +805,7 @@ public class AntarGame : MonoBehaviour
         var redup = Kotak(akar, "Panel Akhir", new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, new Color(0.12f, 0.06f, 0.18f, 0.55f));
         redup.anchorMin = Vector2.zero; redup.anchorMax = Vector2.one; redup.sizeDelta = Vector2.zero;
         redup.GetComponent<Image>().raycastTarget = true;
-        kartuAkhir = Panel(redup, "Kartu Akhir", new Vector2(0.5f, 0.5f), new Vector2(0, -20), new Vector2(940, 600), KRIM, 40f, 8f);
+        kartuAkhir = Panel(redup, "Kartu Akhir", new Vector2(0.5f, 0.5f), new Vector2(0, -20), new Vector2(940, 720), KRIM, 40f, 8f);
         var judul = Panel(kartuAkhir, "Pita Judul", new Vector2(0.5f, 1), new Vector2(0, 50), new Vector2(780, 104), HIJAU, 30f, 8f);
         judul.localRotation = Quaternion.Euler(0, 0, -2f);
         Teks(judul, "HARI PERTAMA SELESAI!", 58, Color.white, TextAlignmentOptions.Center, Vector2.zero, true, 0.28f);
@@ -815,8 +820,17 @@ public class AntarGame : MonoBehaviour
             b.localScale = Vector3.zero;
             bintang[i] = b;
         }
-        teksAkhir = Teks(Wadah(kartuAkhir, "Isi", new Vector2(0.5f, 0.5f), new Vector2(0, -50), new Vector2(800, 220)), "", 40, TEKS, TextAlignmentOptions.Center, Vector2.zero);
-        Teks(Wadah(kartuAkhir, "Terima Kasih", new Vector2(0.5f, 0), new Vector2(0, 30), new Vector2(800, 50)), "Terima kasih sudah bermain ANTAR CEPAT!", 28, new Color32(0x8A, 0x7A, 0x99, 255), TextAlignmentOptions.Center, Vector2.zero);
+        teksAkhir = Teks(Wadah(kartuAkhir, "Isi", new Vector2(0.5f, 0.5f), new Vector2(0, 10), new Vector2(800, 220)), "", 40, TEKS, TextAlignmentOptions.Center, Vector2.zero);
+        Teks(Wadah(kartuAkhir, "Terima Kasih", new Vector2(0.5f, 0), new Vector2(0, 160), new Vector2(800, 50)), "Terima kasih sudah bermain ANTAR CEPAT!", 28, new Color32(0x8A, 0x7A, 0x99, 255), TextAlignmentOptions.Center, Vector2.zero);
+        AntarUI.fontJudul = fontJudul; AntarUI.fontIsi = fontIsi;
+        tombolAkhir = new[]
+        {
+            (RectTransform)AntarUI.Tombol(kartuAkhir, "MAIN LAGI", new Vector2(0.5f, 0), new Vector2(-195, 40), new Vector2(360, 100), HIJAU,
+                () => AntarPindah.Ke(AntarPindah.SCENE_GAME), 42).transform,
+            (RectTransform)AntarUI.Tombol(kartuAkhir, "MENU UTAMA", new Vector2(0.5f, 0), new Vector2(195, 40), new Vector2(360, 100), ORANYE,
+                () => AntarPindah.Ke(AntarPindah.SCENE_MENU), 42).transform,
+        };
+        foreach (var t in tombolAkhir) t.localScale = Vector3.zero;
         panelAkhir = redup.gameObject; panelAkhir.SetActive(false);
         BuatPanelGps(akar);
         PerbaruiHud();
