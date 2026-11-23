@@ -8,7 +8,7 @@ using UnityEngine.UI;
 /// <summary>
 /// ANTAR CEPAT — alur game ojol makanan Anas.
 /// Setiap pesanan: ambil makanan di toko (bicara dengan penjual) ➔ antar ke rumah pelanggan
-/// (ketuk pintu, pintu terbuka, pelanggan keluar) ➔ dapat rating & ongkir. Setelah 3 pesanan: selesai.
+/// (ketuk pintu, pintu terbuka, pelanggan keluar) ➔ dapat rating & ongkir. Setelah semua pesanan (6, keliling kota): selesai.
 /// Tombol: WASD/klik = jalan, Spasi = lompat, E = aksi (atau tombol AKSI / LOMPAT di layar).
 /// HUD dibuat dari skrip supaya tidak perlu disusun manual.
 /// </summary>
@@ -26,6 +26,8 @@ public class AntarGame : MonoBehaviour
         public Transform titikAntar;
         public Color warnaKemasan = new Color(1f, 0.6f, 0.75f);
         public int ongkir = 15000;
+        [Tooltip("Batas waktu antar (detik). 0 = dihitung otomatis dari jarak toko ke rumah")]
+        public float batasWaktu = 0f;
     }
 
     public Transform pemain;
@@ -42,6 +44,11 @@ public class AntarGame : MonoBehaviour
     public AudioClip suaraNotif;
     public AudioClip suaraAmbil;
     public AudioClip suaraKoin;
+    [Tooltip("Dengung motor skuter listrik (berulang)")]
+    public AudioClip suaraSkuter;
+    public AudioClip suaraKlakson;
+    [Tooltip("Detak saat waktu antar hampir habis")]
+    public AudioClip suaraDetik;
 
     public Color warnaUtama = new Color(0.0f, 0.67f, 0.36f);
 
@@ -58,6 +65,22 @@ public class AntarGame : MonoBehaviour
     int pendapatan;
     readonly List<int> rating = new List<int>();
     bool tombolAksi;
+
+    // batas waktu antar & rekap
+    float sisaWaktu, batasKini, waktuTempuh;
+    bool timerJalan;
+    int detikTerakhir = -1;
+    readonly List<string> rekap = new List<string>();
+    RectTransform chipWaktu;
+    TextMeshProUGUI teksWaktu;
+    Image isiChipWaktu;
+    Transform hudAkar;
+    // tangan & suara
+    Transform pegangKiri, pegangKanan, titikKetuk;
+    bool menyerahkan;
+    AudioSource dengungSkuter;
+    GameObject tombolKlakson;
+    bool klaksonDiminta;
     Transform penanda;
     GameObject kemasan;
     AntarNpc[] semuaNpc;
@@ -100,7 +123,7 @@ public class AntarGame : MonoBehaviour
             if (!main) break;
             yield return null;
         }
-        Notif("PESANAN MASUK! (3)");
+        Notif($"PESANAN MASUK! ({pesanan.Count})");
         yield return Dialog(dialogPembuka, null);
         sibuk = false;
         PerbaruiHud();
@@ -108,6 +131,11 @@ public class AntarGame : MonoBehaviour
 
     void Update()
     {
+        UpdateWaktu();
+        UpdateTangan();
+        UpdateSuaraSkuter();
+        if (naik && (Input.GetKeyDown(KeyCode.H) || klaksonDiminta)) { if (suaraKlakson != null) AudioSource.PlayClipAtPoint(suaraKlakson, pemain.position, 0.9f); }
+        klaksonDiminta = false;
         if (sibuk) { panelPrompt.SetActive(false); penanda.gameObject.SetActive(false); return; }
         bool tekanAksi = Input.GetKeyDown(KeyCode.E) || tombolAksi;
         tombolAksi = false;
@@ -213,7 +241,10 @@ public class AntarGame : MonoBehaviour
         Main(suaraAmbil);
         kemasan.GetComponent<Renderer>().material.color = p.warnaKemasan;
         kemasan.SetActive(true);
-        Notif($"{p.makanan} diambil! Antar ke {p.namaRumah}");
+        batasKini = p.batasWaktu > 0f ? p.batasWaktu : HitungBatas(p);
+        sisaWaktu = batasKini; waktuTempuh = 0f; detikTerakhir = -1; timerJalan = true;
+        if (chipWaktu != null) { chipWaktu.gameObject.SetActive(true); StartCoroutine(Pop(chipWaktu, 0.3f)); }
+        Notif($"{p.makanan} diambil! Antar dalam {FormatWaktu(batasKini)}");
         PerbaruiHud();
         if (skuter == null && prefabSkuter != null)
         {
@@ -228,37 +259,291 @@ public class AntarGame : MonoBehaviour
     {
         sibuk = true;
         Hentikan();
+        timerJalan = false;
+        int bintangP = waktuTempuh <= batasKini ? 5 : (waktuTempuh <= batasKini * 1.35f ? 4 : 3);
+        int tip = waktuTempuh <= batasKini * 0.6f ? 5000 : 0;
+        AntarNpc pelanggan = p.pintu != null ? p.pintu.pelanggan : null;
         if (p.pintu != null)
         {
-            var d = p.pintu.transform.position - pemain.position; d.y = 0f;
-            if (d.sqrMagnitude > 0.01f) pemain.rotation = Quaternion.LookRotation(d);
+            // melangkah ke depan pintu, lalu mengetuk
+            var pintuT = p.pintu.transform;
+            // titik berdiri di depan pintu (sisi luar rumah); kalau tidak ada NavMesh di situ, cari yang terdekat ke arah jalan
+            Vector3 depan = pemain.position;
+            NavMeshHit hit;
+            for (float jauh = 0.75f; jauh <= 2.5f; jauh += 0.35f)
+                if (NavMesh.SamplePosition(pintuT.position + pintuT.forward * jauh, out hit, 0.6f, NavMesh.AllAreas)) { depan = hit.position; break; }
+            Vector3 dari = pemain.position;
+            var hadap = pintuT.position - depan; hadap.y = 0f;
+            Quaternion rDari = pemain.rotation, rKe = hadap.sqrMagnitude > 0.01f ? Quaternion.LookRotation(hadap) : pemain.rotation;
+            for (float u = 0f; u < 1f; u += Time.deltaTime / 0.35f)
+            {
+                agenPemain.Warp(Vector3.Lerp(dari, depan, Mathf.SmoothStep(0f, 1f, u)));
+                pemain.rotation = Quaternion.Slerp(rDari, rKe, u);
+                yield return null;
+            }
+            agenPemain.Warp(depan); pemain.rotation = rKe;
+            StartCoroutine(Ketuk(pintuT));
             yield return p.pintu.Buka();
-            if (p.pintu.pelanggan != null) yield return Dialog(p.pintu.pelanggan.dialog, p.pintu.pelanggan);
+            // serahkan pesanan ke pelanggan
+            if (pelanggan != null) yield return Serahkan(pelanggan);
+            if (pelanggan != null)
+            {
+                string[] baris = bintangP == 5 ? pelanggan.dialog : DialogTelat(pelanggan.nama, bintangP);
+                yield return Dialog(baris, pelanggan);
+                Senang(pelanggan, bintangP);
+            }
         }
         membawa = false;
         kemasan.SetActive(false);
-        pendapatan += p.ongkir;
-        rating.Add(5);
+        if (chipWaktu != null) chipWaktu.gameObject.SetActive(false);
+        int dapat = p.ongkir + tip;
+        pendapatan += dapat;
+        rating.Add(bintangP);
+        rekap.Add($"{p.makanan}   <color=#8A7A99>{FormatWaktu(waktuTempuh)}</color>   <color=#FF8A2B><b>{bintangP}/5</b></color>   <color=#2EC46A>Rp {dapat:N0}</color>".Replace(',', '.'));
         Main(suaraKoin);
-        Notif($"Pesanan selesai!  Rating 5/5   +Rp {p.ongkir:N0}".Replace(',', '.'));
+        EfekHadiah(pelanggan != null ? pelanggan.transform.position + Vector3.up * 2.2f : pemain.position + Vector3.up * 2.4f, bintangP, dapat, tip > 0);
+        Notif((tip > 0 ? $"Super cepat! {bintangP} bintang  +Rp {dapat:N0} (tip)" : $"Pesanan selesai! {bintangP} bintang  +Rp {dapat:N0}").Replace(',', '.'));
         indeks++;
         PerbaruiHud();
         if (indeks >= pesanan.Count)
         {
-            yield return new WaitForSeconds(1.2f);
+            yield return new WaitForSeconds(1.6f);
             yield return Penutup();
         }
         sibuk = false;
     }
 
+    // ---------- batas waktu ----------
+    float HitungBatas(Pesanan p)
+    {
+        float panjang = 60f;
+        if (p.titikToko != null && p.titikAntar != null)
+        {
+            var path = new NavMeshPath();
+            NavMeshHit a, b;
+            Vector3 dari = p.titikToko.position, ke = p.titikAntar.position;
+            if (NavMesh.SamplePosition(dari, out a, 4f, NavMesh.AllAreas)) dari = a.position;
+            if (NavMesh.SamplePosition(ke, out b, 4f, NavMesh.AllAreas)) ke = b.position;
+            if (NavMesh.CalculatePath(dari, ke, NavMesh.AllAreas, path) && path.corners.Length > 1)
+            {
+                panjang = 0f;
+                for (int i = 1; i < path.corners.Length; i++) panjang += Vector3.Distance(path.corners[i - 1], path.corners[i]);
+            }
+            else panjang = Vector3.Distance(dari, ke) * 1.3f;
+        }
+        // naik skuter + parkir + jalan ke pintu, dengan kelonggaran untuk pemain baru
+        return Mathf.Ceil((30f + panjang / 4f) / 5f) * 5f;
+    }
+
+    static string FormatWaktu(float detik)
+    {
+        int d = Mathf.Max(0, Mathf.CeilToInt(detik));
+        return $"{d / 60}:{d % 60:00}";
+    }
+
+    void UpdateWaktu()
+    {
+        if (chipWaktu == null || !timerJalan) return;
+        if (!sibuk || naik) { sisaWaktu -= Time.deltaTime; waktuTempuh += Time.deltaTime; }
+        float r = sisaWaktu / Mathf.Max(1f, batasKini);
+        if (sisaWaktu >= 0f)
+        {
+            teksWaktu.text = $"WAKTU  {FormatWaktu(sisaWaktu)}";
+            isiChipWaktu.color = r > 0.5f ? HIJAU : (r > 0.2f ? ORANYE : MERAH);
+        }
+        else
+        {
+            teksWaktu.text = $"TELAT  +{FormatWaktu(-sisaWaktu)}";
+            isiChipWaktu.color = MERAH;
+        }
+        // detak & denyut 10 detik terakhir
+        int detik = Mathf.CeilToInt(sisaWaktu);
+        if (sisaWaktu > 0f && sisaWaktu <= 10f)
+        {
+            if (detik != detikTerakhir) { detikTerakhir = detik; if (suaraDetik != null) AudioSource.PlayClipAtPoint(suaraDetik, pemain.position, 0.6f); }
+            chipWaktu.localScale = Vector3.one * (1f + Mathf.Max(0f, Mathf.Sin((sisaWaktu % 1f) * Mathf.PI)) * 0.12f);
+        }
+        else chipWaktu.localScale = Vector3.one;
+    }
+
+    static string[] DialogTelat(string nama, int bintangP)
+    {
+        if (bintangP == 4)
+            return new[]
+            {
+                $"{nama}|Akhirnya datang juga. Agak lama, tapi makanannya masih enak.",
+                "Anas|Maaf sudah menunggu. Selamat menikmati!",
+                $"{nama}|Bintang empat, ya. Semangat terus!",
+            };
+        return new[]
+        {
+            $"{nama}|Lama sekali... makanannya sudah mulai dingin.",
+            "Anas|Maaf, tadi saya kelamaan di jalan. Selamat menikmati!",
+            $"{nama}|Bintang tiga dulu, ya. Lain kali lebih cepat.",
+        };
+    }
+
+    // ---------- tangan Anas: memegang kemasan, mengetuk, menyerahkan ----------
+    void UpdateTangan()
+    {
+        if (kontrol == null || menyerahkan) return;
+        bool pegang = kemasan != null && kemasan.activeInHierarchy && !naik;
+        kontrol.ikKiri = pegang ? pegangKiri : null;
+        if (kontrol.ikKanan != titikKetuk || titikKetuk == null || !titikKetuk.gameObject.activeSelf)
+            kontrol.ikKanan = pegang ? pegangKanan : null;
+    }
+
+    IEnumerator Ketuk(Transform pintuT)
+    {
+        if (titikKetuk == null) { titikKetuk = new GameObject("Titik Ketuk").transform; }
+        titikKetuk.gameObject.SetActive(true);
+        var dasar = pintuT.position + Vector3.up * 1.35f + pintuT.forward * 0.12f;
+        var dari = kemasan.transform.localPosition;
+        kemasan.transform.localPosition = dari + new Vector3(-0.14f, 0f, 0f);   // kemasan dipegang tangan kiri dulu
+        kontrol.ikKanan = titikKetuk;
+        for (float t = 0f; t < 0.9f; t += Time.deltaTime)
+        {
+            // tiga ketukan
+            float k = Mathf.Abs(Mathf.Sin(t / 0.9f * Mathf.PI * 3f));
+            titikKetuk.position = dasar + pintuT.forward * (0.03f + 0.13f * k);
+            yield return null;
+        }
+        kontrol.ikKanan = null;
+        kemasan.transform.localPosition = dari;
+        titikKetuk.gameObject.SetActive(false);
+        // mundur sedikit supaya pelanggan punya tempat keluar dari pintu
+        Vector3 awal = pemain.position, mundur = awal;
+        NavMeshHit hit;
+        for (float jauh = 2.2f; jauh >= 1.4f; jauh -= 0.2f)
+            if (NavMesh.SamplePosition(pintuT.position + pintuT.forward * jauh, out hit, 0.5f, NavMesh.AllAreas)) { mundur = hit.position; break; }
+        // lompatan kecil ke belakang (tanpa animasi jalan supaya kaki tidak terlihat "moonwalk")
+        if (halusPemain != null) halusPemain.paksaDiam = true;
+        float off0 = agenPemain.baseOffset;
+        for (float u = 0f; u < 1f; u += Time.deltaTime / 0.45f)
+        {
+            agenPemain.Warp(Vector3.Lerp(awal, mundur, Mathf.SmoothStep(0f, 1f, u)));
+            agenPemain.baseOffset = off0 + Mathf.Sin(u * Mathf.PI) * 0.12f;
+            yield return null;
+        }
+        agenPemain.baseOffset = off0;
+        agenPemain.Warp(mundur);
+        if (halusPemain != null) halusPemain.paksaDiam = false;
+    }
+
+    IEnumerator Serahkan(AntarNpc pelanggan)
+    {
+        menyerahkan = true;
+        pelanggan.sedangBicara = true;
+        yield return new WaitForSeconds(0.25f);
+        // salinan kemasan berpindah dari tangan Anas ke tangan pelanggan
+        var kopi = Instantiate(kemasan);
+        kopi.name = "Pesanan " + pelanggan.nama;
+        kopi.transform.SetPositionAndRotation(kemasan.transform.position, kemasan.transform.rotation);
+        kopi.transform.localScale = kemasan.transform.lossyScale;
+        kemasan.SetActive(false);
+        Transform kKiri = kopi.transform.Find("Pegang Kiri"), kKanan = kopi.transform.Find("Pegang Kanan");
+        kontrol.ikKiri = kKiri; kontrol.ikKanan = kKanan;
+        var arah = pemain.position - pelanggan.transform.position; arah.y = 0f; arah.Normalize();
+        Vector3 p0 = kopi.transform.position;
+        Vector3 p1 = pelanggan.transform.position + Vector3.up * 1.0f + arah * 0.45f;
+        Main(suaraAmbil);
+        for (float u = 0f; u < 1f; u += Time.deltaTime / 0.6f)
+        {
+            float e = Mathf.SmoothStep(0f, 1f, u);
+            kopi.transform.position = Vector3.Lerp(p0, p1, e) + Vector3.up * Mathf.Sin(e * Mathf.PI) * 0.12f;
+            // tangan Anas ikut menyodorkan sampai setengah jalan, lalu melepas
+            if (u > 0.6f) { kontrol.ikKiri = null; kontrol.ikKanan = null; }
+            yield return null;
+        }
+        kopi.transform.position = p1;
+        kopi.transform.SetParent(pelanggan.transform, true);
+        kontrol.ikKiri = null; kontrol.ikKanan = null;
+        menyerahkan = false;
+        yield return new WaitForSeconds(0.2f);
+    }
+
+    void Senang(AntarNpc pelanggan, int bintangP)
+    {
+        var anim = pelanggan.GetComponentInChildren<Animator>();
+        if (bintangP >= 4 && anim != null && anim.HasState(0, Animator.StringToHash("Standing_Jump")))
+            anim.CrossFadeInFixedTime("Standing_Jump", 0.15f);
+        else pelanggan.Lambai();
+    }
+
+    // bintang & uang melayang di atas kepala pelanggan
+    void EfekHadiah(Vector3 posDunia, int bintangP, int uang, bool adaTip)
+    {
+        if (hudAkar == null) return;
+        var w = Wadah(hudAkar, "Efek Hadiah", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(420, 170));
+        var cg = w.gameObject.AddComponent<CanvasGroup>(); cg.blocksRaycasts = false;
+        for (int i = 0; i < 5; i++)
+        {
+            var b = Wadah(w, "Bintang", new Vector2(0.5f, 1f), new Vector2(-120 + i * 60, -30), new Vector2(56, 56));
+            b.pivot = new Vector2(0.5f, 0.5f);
+            Lapis(b, "Garis", spBintang, GARIS, Vector2.zero, 0f, 1f);
+            Lapis(b, "Isi", spBintang, i < bintangP ? KUNING : new Color(0.75f, 0.72f, 0.8f), Vector2.zero, 6f, 1f);
+        }
+        var label = Teks(Wadah(w, "Uang", new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(420, 70)),
+            ($"+Rp {uang:N0}" + (adaTip ? "  TIP!" : "")).Replace(',', '.'), 48, HIJAU, TextAlignmentOptions.Center, Vector2.zero, true, 0.3f);
+        StartCoroutine(AnimEfekHadiah(w, cg, posDunia));
+    }
+
+    IEnumerator AnimEfekHadiah(RectTransform w, CanvasGroup cg, Vector3 posDunia)
+    {
+        var cam = Camera.main;
+        var kanvas = hudAkar as RectTransform;
+        for (float t = 0f; t < 2.2f; t += Time.deltaTime)
+        {
+            var sp = cam != null ? cam.WorldToScreenPoint(posDunia + Vector3.up * t * 0.5f) : new Vector3(Screen.width * 0.5f, Screen.height * 0.6f, 1f);
+            Vector2 lokal;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(kanvas, sp, null, out lokal);
+            w.anchoredPosition = lokal;
+            float muncul = Mathf.Clamp01(t / 0.25f);
+            w.localScale = Vector3.one * (sp.z > 0f ? 1f : 0f) * (0.6f + 0.4f * muncul + Mathf.Sin(muncul * Mathf.PI) * 0.25f);
+            cg.alpha = t < 1.6f ? 1f : 1f - (t - 1.6f) / 0.6f;
+            yield return null;
+        }
+        Destroy(w.gameObject);
+    }
+
+    // ---------- suara skuter ----------
+    void UpdateSuaraSkuter()
+    {
+        if (dengungSkuter == null) return;
+        float laju = kontrol != null ? kontrol.Kecepatan.magnitude : 0f;
+        float maks = kontrol != null ? Mathf.Max(1f, kontrol.kecepatanSkuter) : 9f;
+        float r = Mathf.Clamp01(laju / maks);
+        float volTarget = naik ? 0.12f + 0.45f * r : 0f;
+        dengungSkuter.volume = Mathf.MoveTowards(dengungSkuter.volume, volTarget, Time.deltaTime * 1.5f);
+        dengungSkuter.pitch = Mathf.Lerp(dengungSkuter.pitch, 0.75f + 0.75f * r, 1f - Mathf.Exp(-6f * Time.deltaTime));
+        if (dengungSkuter.volume > 0.001f && !dengungSkuter.isPlaying) dengungSkuter.Play();
+        else if (dengungSkuter.volume <= 0.001f && dengungSkuter.isPlaying) dengungSkuter.Stop();
+    }
+
     IEnumerator Penutup()
     {
         penanda.gameObject.SetActive(false);
-        yield return Dialog(dialogPenutup, null);
+        // kalimat "rating sempurna" hanya dipakai kalau semua pesanan memang bintang 5
+        var penutup = new List<string>(dialogPenutup);
+        if (RataRating() < 4.95)
+            for (int i = 0; i < penutup.Count; i++)
+                if (penutup[i].Contains("sempurna"))
+                {
+                    int bar = penutup[i].IndexOf('|');
+                    string nama = bar >= 0 ? penutup[i].Substring(0, bar + 1) : "";
+                    penutup[i] = nama + $"Kerja bagus! Semua pesanan terkirim dengan rating {RataRating():0.0}. Besok coba lebih cepat, ya!";
+                }
+        yield return Dialog(penutup.ToArray(), null);
         panelPrompt.SetActive(false);
         panelAkhir.SetActive(true);
         teksAkhir.text = "";
         yield return Pop(kartuAkhir, 0.4f);
+        int rata = rating.Count > 0 ? Mathf.RoundToInt((float)RataRating()) : 5;
+        for (int i = 0; i < bintang.Length; i++)
+        {
+            var isi = bintang[i].Find("Isi");
+            if (isi != null) isi.GetComponent<Image>().color = i < rata ? KUNING : new Color(0.8f, 0.77f, 0.84f);
+        }
         foreach (var b in bintang)
         {
             Main(suaraAmbil);
@@ -280,11 +565,19 @@ public class AntarGame : MonoBehaviour
         InputManager.bCanPlayerMove = true;
     }
 
+    double RataRating()
+    {
+        if (rating.Count == 0) return 5.0;
+        double t = 0; foreach (var r in rating) t += r;
+        return t / rating.Count;
+    }
+
     void TulisAkhir(int uang)
     {
-        teksAkhir.text = ($"Pesanan diantar   <color=#2EC46A><b>{pesanan.Count}</b></color>\n" +
-                          "Rating   <color=#FF8A2B><b>5.0 / 5</b></color>\n" +
-                          $"Pendapatan   <color=#2EC46A><b>Rp {uang:N0}</b></color>").Replace(',', '.');
+        var sb = new System.Text.StringBuilder();
+        foreach (var r in rekap) sb.Append(r).Append('\n');
+        sb.Append($"\nRating   <color=#FF8A2B><b>{RataRating():0.0} / 5</b></color>     Pendapatan   <color=#2EC46A><b>Rp {uang:N0}</b></color>".Replace(',', '.'));
+        teksAkhir.text = sb.ToString();
     }
 
     void LateUpdate()
@@ -342,7 +635,7 @@ public class AntarGame : MonoBehaviour
             while (!TekanLanjut()) yield return null;
         }
         panelDialog.SetActive(false);
-        if (tombolLompat) tombolLompat.SetActive(true);
+        if (tombolLompat) tombolLompat.SetActive(!naik);
         if (npc != null) npc.sedangBicara = false;
         if (kameraTpp != null) kameraTpp.lawanBicara = null;
         InputManager.bCanPlayerMove = true;
@@ -468,6 +761,12 @@ public class AntarGame : MonoBehaviour
         var gk = new GameObject("Pegangan_Kiri").transform; gk.SetParent(skuter, false); gk.localPosition = new Vector3(-0.33f, 1.82f, 0.60f);
         var gn = new GameObject("Pegangan_Kanan").transform; gn.SetParent(skuter, false); gn.localPosition = new Vector3(0.33f, 1.82f, 0.60f);
         if (kontrol != null) { kontrol.gripKiri = gk; kontrol.gripKanan = gn; }
+        if (suaraSkuter != null)
+        {
+            dengungSkuter = go.AddComponent<AudioSource>();
+            dengungSkuter.clip = suaraSkuter; dengungSkuter.loop = true; dengungSkuter.playOnAwake = false;
+            dengungSkuter.volume = 0f; dengungSkuter.spatialBlend = 0.4f;
+        }
         rodaDepan = skuter.Find("Roda_Depan");
         rodaBelakang = skuter.Find("Roda_Belakang");
         Parkir();
@@ -490,6 +789,7 @@ public class AntarGame : MonoBehaviour
         if (halusPemain != null) halusPemain.paksaDiam = true;
         if (lompat != null) lompat.dikunci = true;
         if (tombolLompat) tombolLompat.SetActive(false);
+        if (tombolKlakson) tombolKlakson.SetActive(true);
         kemasan.SetActive(false);   // pesanan disimpan di tas ojol
 
         // lompat kecil ke atas dek
@@ -580,6 +880,7 @@ public class AntarGame : MonoBehaviour
         if (halusPemain != null) halusPemain.paksaDiam = false;
         if (lompat != null) lompat.dikunci = false;
         if (tombolLompat) tombolLompat.SetActive(true);
+        if (tombolKlakson) tombolKlakson.SetActive(false);
         if (membawa) kemasan.SetActive(true);
         InputManager.bCanPlayerMove = true;
         sibuk = false;
@@ -670,6 +971,7 @@ public class AntarGame : MonoBehaviour
     static readonly Color ORANYE = new Color32(0xFF, 0x8A, 0x2B, 255);
     static readonly Color BIRU = new Color32(0x3F, 0xA9, 0xF5, 255);
     static readonly Color PINK = new Color32(0xFF, 0x5F, 0xA2, 255);
+    static readonly Color MERAH = new Color32(0xFF, 0x5B, 0x5B, 255);
     static readonly Color UNGU = new Color32(0x8B, 0x5C, 0xF6, 255);
     static readonly Color TEKS = new Color32(0x3A, 0x2A, 0x4A, 255);
     const float SUDUT_SPRITE = 44f;
@@ -755,10 +1057,11 @@ public class AntarGame : MonoBehaviour
         var canvas = go.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = 50;
         var sc = go.GetComponent<CanvasScaler>(); sc.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize; sc.referenceResolution = new Vector2(1920, 1080); sc.matchWidthOrHeight = 0.5f;
         var akar = go.transform;
+        hudAkar = akar;
 
         // ---- kartu pesanan (kiri atas)
-        var kartu = Panel(akar, "Kartu Pesanan", new Vector2(0, 1), new Vector2(40, -62), new Vector2(580, 204), KRIM);
-        var pita = Panel(kartu, "Pita Judul", new Vector2(0, 1), new Vector2(-12, 36), new Vector2(290, 64), HIJAU, 22f);
+        var kartu = Panel(akar, "Kartu Pesanan", new Vector2(0, 1), new Vector2(40, -86), new Vector2(580, 204), KRIM);
+        var pita = Panel(kartu, "Pita Judul", new Vector2(0, 1), new Vector2(-12, 26), new Vector2(290, 64), HIJAU, 22f);
         pita.localRotation = Quaternion.Euler(0, 0, 4f);
         Teks(pita, "ANTAR CEPAT", 38, Color.white, TextAlignmentOptions.Center, Vector2.zero, true, 0.25f);
         var lencana = Panel(kartu, "Lencana", new Vector2(0, 0.5f), new Vector2(22, 0), new Vector2(124, 124), KUNING, 0f, 7f, spLingkaran);
@@ -769,6 +1072,12 @@ public class AntarGame : MonoBehaviour
         teksJarak = Teks(chipJarak, "", 28, Color.white, TextAlignmentOptions.Center, Vector2.zero, true, 0.22f);
         var chipUang = Panel(kartu, "Chip Uang", new Vector2(0, 0), new Vector2(330, 18), new Vector2(224, 48), ORANYE, 24f, 5f);
         teksUang = Teks(chipUang, "", 28, Color.white, TextAlignmentOptions.Center, Vector2.zero, true, 0.22f);
+        // ---- batas waktu antar (di bawah kartu pesanan)
+        chipWaktu = Panel(akar, "Chip Waktu", new Vector2(0, 1), new Vector2(60, -300), new Vector2(300, 64), HIJAU, 30f, 6f);
+        chipWaktu.pivot = new Vector2(0.5f, 0.5f); chipWaktu.anchoredPosition = new Vector2(210, -332);
+        isiChipWaktu = chipWaktu.Find("Isi").GetComponent<Image>();
+        teksWaktu = Teks(chipWaktu, "", 32, Color.white, TextAlignmentOptions.Center, Vector2.zero, true, 0.25f);
+        chipWaktu.gameObject.SetActive(false);
 
         // ---- notifikasi (atas tengah)
         var notif = Panel(akar, "Notif", new Vector2(0.5f, 1), new Vector2(40, -36), new Vector2(640, 88), KUNING, 44f, 7f);
@@ -802,6 +1111,8 @@ public class AntarGame : MonoBehaviour
         // ---- tombol layar sentuh (kanan bawah)
         tombolAksiRt = Tombol(akar, "AKSI", new Vector2(-60, 60), HIJAU, () => tombolAksi = true);
         tombolLompat = Tombol(akar, "LOMPAT", new Vector2(-270, 60), ORANYE, () => { if (lompat != null) lompat.MintaLompat(); }).gameObject;
+        tombolKlakson = Tombol(akar, "KLAKSON", new Vector2(-270, 60), BIRU, () => klaksonDiminta = true).gameObject;
+        tombolKlakson.SetActive(false);
 
         // ---- panel akhir
         var redup = Kotak(akar, "Panel Akhir", new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, new Color(0.12f, 0.06f, 0.18f, 0.55f));
@@ -822,7 +1133,8 @@ public class AntarGame : MonoBehaviour
             b.localScale = Vector3.zero;
             bintang[i] = b;
         }
-        teksAkhir = Teks(Wadah(kartuAkhir, "Isi", new Vector2(0.5f, 0.5f), new Vector2(0, 10), new Vector2(800, 220)), "", 40, TEKS, TextAlignmentOptions.Center, Vector2.zero);
+        teksAkhir = Teks(Wadah(kartuAkhir, "Isi", new Vector2(0.5f, 0.5f), new Vector2(0, -10), new Vector2(840, 260)), "", 34, TEKS, TextAlignmentOptions.Center, Vector2.zero);
+        teksAkhir.enableAutoSizing = true; teksAkhir.fontSizeMin = 22; teksAkhir.fontSizeMax = 34;
         Teks(Wadah(kartuAkhir, "Terima Kasih", new Vector2(0.5f, 0), new Vector2(0, 160), new Vector2(800, 50)), "Terima kasih sudah bermain ANTAR CEPAT!", 28, new Color32(0x8A, 0x7A, 0x99, 255), TextAlignmentOptions.Center, Vector2.zero);
         AntarUI.fontJudul = fontJudul; AntarUI.fontIsi = fontIsi;
         tombolAkhir = new[]
@@ -1035,6 +1347,8 @@ public class AntarGame : MonoBehaviour
         kemasan.transform.SetParent(pemain, false);
         kemasan.transform.localPosition = new Vector3(0f, 1.0f, 0.42f);
         kemasan.transform.localScale = new Vector3(0.42f, 0.28f, 0.3f);
+        pegangKiri = new GameObject("Pegang Kiri").transform; pegangKiri.SetParent(kemasan.transform, false); pegangKiri.localPosition = new Vector3(-0.62f, -0.1f, 0f);
+        pegangKanan = new GameObject("Pegang Kanan").transform; pegangKanan.SetParent(kemasan.transform, false); pegangKanan.localPosition = new Vector3(0.62f, -0.1f, 0f);
         kemasan.SetActive(false);
     }
 

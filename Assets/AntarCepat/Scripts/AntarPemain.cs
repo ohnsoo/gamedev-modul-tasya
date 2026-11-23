@@ -141,21 +141,40 @@ public class AntarPemain : MonoBehaviour
     }
 
     // tangan memegang stang saat naik skuter (butuh "IK Pass" aktif di layer Animator)
+    // saat jalan kaki: tangan memegang kemasan makanan / mengetuk pintu / menyerahkan pesanan (diatur AntarGame)
+    [HideInInspector] public Transform ikKiri, ikKanan;
+    float bobotKiri, bobotKanan;
+    Vector3 posKiri, posKanan;
+
     void OnAnimatorIK(int layer)
     {
         if (anim == null) return;
-        bobotIK = Mathf.MoveTowards(bobotIK, naikSkuter && gripKiri != null ? 1f : 0f, Time.deltaTime * 4f);
-        anim.SetIKPositionWeight(AvatarIKGoal.LeftHand, bobotIK);
-        anim.SetIKPositionWeight(AvatarIKGoal.RightHand, bobotIK);
-        anim.SetIKRotationWeight(AvatarIKGoal.LeftHand, bobotIK * 0.5f);
-        anim.SetIKRotationWeight(AvatarIKGoal.RightHand, bobotIK * 0.5f);
+        float dt = Time.deltaTime;
+        bobotIK = Mathf.MoveTowards(bobotIK, naikSkuter && gripKiri != null ? 1f : 0f, dt * 4f);
         if (bobotIK > 0f && gripKiri != null)
         {
+            anim.SetIKPositionWeight(AvatarIKGoal.LeftHand, bobotIK);
+            anim.SetIKPositionWeight(AvatarIKGoal.RightHand, bobotIK);
+            anim.SetIKRotationWeight(AvatarIKGoal.LeftHand, bobotIK * 0.5f);
+            anim.SetIKRotationWeight(AvatarIKGoal.RightHand, bobotIK * 0.5f);
             anim.SetIKPosition(AvatarIKGoal.LeftHand, gripKiri.position);
             anim.SetIKPosition(AvatarIKGoal.RightHand, gripKanan.position);
             anim.SetIKRotation(AvatarIKGoal.LeftHand, gripKiri.rotation);
             anim.SetIKRotation(AvatarIKGoal.RightHand, gripKanan.rotation);
+            return;
         }
+        bool kiri = !naikSkuter && ikKiri != null && ikKiri.gameObject.activeInHierarchy;
+        bool kanan = !naikSkuter && ikKanan != null && ikKanan.gameObject.activeInHierarchy;
+        bobotKiri = Mathf.MoveTowards(bobotKiri, kiri ? 1f : 0f, dt * 5f);
+        bobotKanan = Mathf.MoveTowards(bobotKanan, kanan ? 1f : 0f, dt * 5f);
+        if (kiri) posKiri = ikKiri.position;
+        if (kanan) posKanan = ikKanan.position;
+        anim.SetIKPositionWeight(AvatarIKGoal.LeftHand, bobotKiri);
+        anim.SetIKPositionWeight(AvatarIKGoal.RightHand, bobotKanan);
+        anim.SetIKRotationWeight(AvatarIKGoal.LeftHand, 0f);
+        anim.SetIKRotationWeight(AvatarIKGoal.RightHand, 0f);
+        if (bobotKiri > 0f) anim.SetIKPosition(AvatarIKGoal.LeftHand, posKiri);
+        if (bobotKanan > 0f) anim.SetIKPosition(AvatarIKGoal.RightHand, posKanan);
     }
 
     public void Berhenti()

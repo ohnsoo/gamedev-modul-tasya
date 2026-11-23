@@ -24,7 +24,7 @@ public class AntarKamera : MonoBehaviour
 
     float yaw, pitch, jarakSekarang;
     int jari = -1;
-    float sudutHalus = 14f, bobotDialog, sisi = 1f, sejakGeser = 99f;
+    float sudutHalus = 14f, bobotDialog, sejakGeser = 99f;
     Transform lawanTerakhir, sisiDipilih;
     [HideInInspector] public Transform lawanBicara;   // diisi AntarGame saat dialog dengan NPC
     bool seretMouse;
@@ -72,20 +72,39 @@ public class AntarKamera : MonoBehaviour
         float jarakIngin = skuter ? jarakSkuter : jarak;
         float sudutDasar = skuter ? Mathf.Max(pitch, 20f) : pitch;
         // pivot diperhalus sedikit supaya lompat/turun-naik tidak menyentak
-        Vector3 pivotTarget = target.position + Vector3.up * tinggiLihat;
+        // di bawah atap (teras rumah / kanopi toko) titik pandang diturunkan supaya Anas tidak tertutup atap
+        float tinggiPivot = tinggiLihat;
+        RaycastHit atap;
+        if (Physics.Raycast(target.position + Vector3.up * 1.2f, Vector3.up, out atap, tinggiLihat + 1.5f, ~0, QueryTriggerInteraction.Ignore) && atap.collider.transform.root != target.root)
+            tinggiPivot = Mathf.Clamp(atap.distance + 1.2f - 0.4f, 1.2f, tinggiLihat);
+        Vector3 pivotTarget = target.position + Vector3.up * tinggiPivot;
         pivotHalus = Vector3.Lerp(pivotHalus, pivotTarget, 1f - Mathf.Exp(-14f * dt));
         pivotHalus.x = pivotTarget.x; pivotHalus.z = pivotTarget.z;
 
         // kalau di belakang Anas ada gedung, kamera naik dan melihat dari atas bahu
         float sudut = sudutDasar;
         float boleh = JarakBebas(pivotHalus, Quaternion.Euler(sudut, yaw, 0f) * Vector3.back, jarakIngin);
+        // saat jalan kaki dan terhalang (mis. berdiri di depan pintu rumah), kamera berputar pelan ke sisi yang lapang
+        // supaya tidak berubah jadi pandangan dari atas kepala
+        if (!skuter && sejakGeser > 1.5f && boleh < jarakIngin * 0.6f)
+        {
+            float terbaik = boleh, yawBaik = yaw;
+            for (int i = 1; i <= 3; i++)   // maks 60 derajat: jangan sampai berputar ke dalam rumah
+                for (int sg = -1; sg <= 1; sg += 2)
+                {
+                    float y2 = yaw + sg * 20f * i;
+                    float b2 = JarakBebas(pivotHalus, Quaternion.Euler(sudutDasar + 10f, y2, 0f) * Vector3.back, jarakIngin);
+                    if (b2 > terbaik + 1f) { terbaik = b2; yawBaik = y2; }
+                }
+            if (yawBaik != yaw) yaw = Mathf.MoveTowardsAngle(yaw, yawBaik, 110f * dt);
+        }
         for (float tambah = 12f; boleh < jarakIngin * 0.75f && tambah <= 48f; tambah += 12f)
         {
-            float s2 = Mathf.Min(sudutDasar + tambah, 72f);
+            float s2 = Mathf.Min(sudutDasar + tambah, 52f);
             float b2 = JarakBebas(pivotHalus, Quaternion.Euler(s2, yaw, 0f) * Vector3.back, jarakIngin);
             if (b2 > boleh + 0.5f) { boleh = b2; sudut = s2; }
         }
-        if (boleh < jarakIngin * 0.5f) sudut = Mathf.Max(sudut, sudutDasar + 30f);   // tetap sempit: lihat dari atas
+        if (boleh < jarakIngin * 0.5f) sudut = Mathf.Max(sudut, Mathf.Min(sudutDasar + 22f, 52f));   // tetap sempit: sedikit dari atas
         sudutHalus = Mathf.Lerp(sudutHalus, sudut, 1f - Mathf.Exp(-5f * dt));
 
         Vector3 mundur = Quaternion.Euler(sudutHalus, yaw, 0f) * Vector3.back;
@@ -125,16 +144,47 @@ public class AntarKamera : MonoBehaviour
         float jauh = Mathf.Clamp(jarakAB * 1.3f + 4.5f, 5.5f, 9f);
         if (sisiDipilih != lawanTerakhir)
         {
-            // pilih sisi kiri/kanan yang paling tidak terhalang (sekali per percakapan)
-            float kanan = JarakBebas(tengah, OffsetDialog(samping, arah, jauh, 1f).normalized, jauh);
-            float kiri = JarakBebas(tengah, OffsetDialog(samping, arah, jauh, -1f).normalized, jauh);
-            sisi = kanan >= kiri ? 1f : -1f;
+            // pilih sudut yang paling lapang DAN bisa melihat kedua tokoh (sekali per percakapan):
+            // samping kanan, samping kiri, atau dari balik bahu Anas
+            float terbaik = -1f;
+            for (int i = 0; i < 3; i++)
+            {
+                Vector3 o = OffsetPilihan(i, samping, arah, jauh);
+                float bebas = JarakBebas(tengah, o.normalized, o.magnitude);
+                Vector3 p = tengah + o.normalized * bebas;
+                float skor = bebas / o.magnitude;
+                if (!Terlihat(p, a + Vector3.up * 1.4f)) skor -= 0.6f;
+                if (!Terlihat(p, b + Vector3.up * 1.4f)) skor -= 0.6f;
+                if (i == 2) skor -= 0.05f;   // samping sedikit lebih diutamakan kalau sama-sama lapang
+                if (skor > terbaik) { terbaik = skor; pilihanDialog = i; }
+            }
             sisiDipilih = lawanTerakhir;
         }
-        Vector3 ofs = OffsetDialog(samping, arah, jauh, sisi);
+        Vector3 ofs = OffsetPilihan(pilihanDialog, samping, arah, jauh);
         float d = JarakBebas(tengah, ofs.normalized, ofs.magnitude);
         pos = tengah + ofs.normalized * d;
         rot = Quaternion.LookRotation(tengah - pos);
+    }
+
+    int pilihanDialog;
+
+    static Vector3 OffsetPilihan(int i, Vector3 samping, Vector3 arah, float jauh)
+    {
+        if (i == 2) return -arah * jauh * 0.8f + samping * jauh * 0.3f + Vector3.up * 1.2f;   // balik bahu Anas
+        return OffsetDialog(samping, arah, jauh, i == 0 ? 1f : -1f);
+    }
+
+    bool Terlihat(Vector3 dari, Vector3 ke)
+    {
+        var d = ke - dari;
+        foreach (var h in Physics.RaycastAll(dari, d.normalized, d.magnitude - 0.3f, ~0, QueryTriggerInteraction.Ignore))
+        {
+            if (h.collider.transform.root == target.root) continue;
+            if (h.collider.attachedRigidbody != null) continue;
+            if (h.collider.GetComponentInParent<AntarNpc>() != null) continue;
+            return false;
+        }
+        return true;
     }
 
     static Vector3 OffsetDialog(Vector3 samping, Vector3 arah, float jauh, float sisi)
